@@ -6,7 +6,7 @@ import ROSLIB from 'roslib';
 
 interface NodeInfo {
   name: string;
-  status: 'running' | 'stopped' | 'error'; // Adjust these statuses as needed.
+  status: 'running' | 'stopped' | 'error';
 }
 
 const NodeManagerPanel: React.FC = () => {
@@ -14,7 +14,6 @@ const NodeManagerPanel: React.FC = () => {
   const [nodes, setNodes] = useState<NodeInfo[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Function to list nodes by calling the corresponding ROS service.
   const listNodes = () => {
     if (!ros || connectionStatus !== 'connected') return;
     setLoading(true);
@@ -25,20 +24,19 @@ const NodeManagerPanel: React.FC = () => {
     });
     const request = new ROSLIB.ServiceRequest({});
     listService.callService(request, (result: any) => {
-      // Assume result.nodes is an array of nodes, each with a name and status.
       setNodes(result.nodes);
       setLoading(false);
     });
   };
 
-  // Fetch node list when connected.
+  // get node list on connect
   useEffect(() => {
     if (ros && connectionStatus === 'connected') {
       listNodes();
     }
   }, [ros, connectionStatus]);
 
-  // Generic function to call start/stop/restart services.
+  // service to do basic operations on the nodes and shit
   const callNodeService = (serviceName: 'start' | 'stop' | 'restart', nodeName: string) => {
     if (!ros || connectionStatus !== 'connected') return;
     const service = new ROSLIB.Service({
@@ -49,7 +47,7 @@ const NodeManagerPanel: React.FC = () => {
     const request = new ROSLIB.ServiceRequest({ node_name: nodeName });
     service.callService(request, (result: any) => {
       console.log(`${serviceName} result: `, result);
-      // Refresh the node list after performing an action.
+      // run it back
       listNodes();
     });
   };

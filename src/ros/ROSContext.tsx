@@ -1,5 +1,5 @@
 'use client';
-
+// react moment, this shit sucks
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import ROSLIB from 'roslib';
 
@@ -18,7 +18,14 @@ export const ROSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [ros, setRos] = useState<ROSLIB.Ros | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
 
+
   const connect = useCallback((url: string) => {
+    // prevents multiple connections from one client, actually pretty important
+    if (ros) {
+      console.warn('Already connected. Please disconnect first.');
+      return;
+    }
+
     const rosInstance = new ROSLIB.Ros({ url });
 
     rosInstance.on('connection', () => {
@@ -37,7 +44,8 @@ export const ROSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     setRos(rosInstance);
-  }, []);
+  }, [ros]);
+
 
   const disconnect = useCallback(() => {
     if (ros) {
@@ -57,7 +65,7 @@ export const ROSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 export const useROS = (): ROSContextType => {
   const context = useContext(ROSContext);
   if (!context) {
-    throw new Error('useROS must be used within a ROSProvider');
+    throw new Error('what are you doing dog, you need to use useROS() within a Provider, dumbass lmfao');
   }
   return context;
 };

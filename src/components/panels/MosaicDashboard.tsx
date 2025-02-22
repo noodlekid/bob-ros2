@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, ReactElement } from 'react';
+import React, { useState, ReactElement } from 'react';
 import {
   Mosaic,
   MosaicWindow,
@@ -8,18 +8,16 @@ import {
   MosaicPath,
 } from 'react-mosaic-component';
 import 'react-mosaic-component/react-mosaic-component.css';
-import ROSMonitor from '@/components/panels/ROSMonitor'; // Your ROSMonitor component
 import NodeManagerPanel from './NodeManagerPanel';
 import WebRTCClientPanel from './WebRTCClientPanel';
 import MapView from './MapView';
 import WaypointList from './WaypointList';
+import SystemTelemetryPanel from './SystemTelemetryPanel';
 
-// Define mosaic keys for three panels.
 type MosaicKey = 'mapView' | 'rosMonitor' | 'waypointList' | 'nodeManager' | 'webrtcStream';
 
-
 const MosaicDashboard: React.FC = () => {
-  // Initialize the mosaic layout with three panels.
+  // TODO: paramaterize layout for custom layout configs
   const [mosaicLayout, setMosaicLayout] = useState<MosaicNode<MosaicKey> | null>({
     direction: 'row',
     first: {
@@ -30,19 +28,18 @@ const MosaicDashboard: React.FC = () => {
     },
     second: {
       direction: 'column',
-      first: 'nodeManager',
+      first: 'rosMonitor',
       second: {
         direction: 'row',
-        first: 'rosMonitor',
+        first: 'nodeManager',
         second: 'waypointList',
         splitPercentage: 50,
       },
-      splitPercentage: 50,
+      splitPercentage: 40,
     },
     splitPercentage: 60,
   });
 
-  // Render function for each mosaic tile.
   const renderTile = (id: MosaicKey, path: MosaicPath): ReactElement => {
     switch (id) {
       case 'mapView':
@@ -51,12 +48,6 @@ const MosaicDashboard: React.FC = () => {
             <div style={{ height: '100%', backgroundColor: '#121212' }}>
               <MapView />
             </div>
-          </MosaicWindow>
-        );
-      case 'rosMonitor':
-        return (
-          <MosaicWindow<MosaicKey> title="ROS Monitor" path={path}>
-            <ROSMonitor />
           </MosaicWindow>
         );
       case 'waypointList':
@@ -76,7 +67,13 @@ const MosaicDashboard: React.FC = () => {
           <MosaicWindow<MosaicKey> title="Video Stream" path={path}>
             <WebRTCClientPanel config={{ mockMode: true, signalingUrl: 'ws://localhost:8443' }} />
           </MosaicWindow>
-        )
+        );
+      case 'rosMonitor':
+        return (
+          <MosaicWindow<MosaicKey> title="System Telemetry" path={path}>
+            <SystemTelemetryPanel />
+          </MosaicWindow>
+        );
       default:
         return <div>Unknown tile</div>;
     }
@@ -89,7 +86,6 @@ const MosaicDashboard: React.FC = () => {
         initialValue={mosaicLayout}
         onChange={setMosaicLayout}
       />
-      {/* Global dark mode style overrides for mosaic components */}
       <style jsx global>{`
         .mosaic {
           background-color: #121212;

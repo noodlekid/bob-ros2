@@ -1,13 +1,9 @@
-// src/components/panels/WebRTCClientPanel.tsx
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
 import ROSLIB from 'roslib';
 import { useROS } from '@/ros/ROSContext';
 
-/* ======================================================================
-   ROS2 Video Service Interface Types
-====================================================================== */
 export interface VideoSource {
   name: string;
   width: number;
@@ -28,28 +24,24 @@ export interface VideoOutResponse {
   success: boolean;
 }
 
-/* ======================================================================
-   Configuration Interfaces & Defaults
-====================================================================== */
 export interface WebRTCClientConfig {
-  signalingUrl?: string; // e.g., "ws://localhost:8080/signalling"
-  stunServers?: string[]; // e.g., ["stun:stun.l.google.com:19302"]
-  videoServiceName?: string; // ROS service name to start video (e.g., "start_video")
-  videoServiceMessageType?: string; // ROS message type (e.g., "interfaces/srv/VideoOut")
-  defaultVideoRequest?: VideoOutRequest; // Default request parameters
-  mockMode?: boolean; // When true, bypass the ROS service call (for testing)
+  signalingUrl?: string;
+  stunServers?: string[]; // tbh we dont need any stun servers, we arent traversing NAT
+  videoServiceName?: string;
+  videoServiceMessageType?: string;
+  defaultVideoRequest?: VideoOutRequest;
+  mockMode?: boolean;
 }
 
 export interface WebRTCClientPanelProps {
   config?: WebRTCClientConfig;
-  // Factories for creating RTCPeerConnection and WebSocket objects (for testability).
   createPeerConnection?: (config: WebRTCClientConfig) => RTCPeerConnection;
   createWebSocket?: (url: string) => WebSocket;
 }
 
 const defaultConfig: WebRTCClientConfig = {
   signalingUrl: 'ws://localhost:8080/signalling',
-  stunServers: ['stun:stun.l.google.com:19302'],
+  stunServers: ['stun:stun.l.google.com:19302'], // like same comment here, very stunning but not needed
   videoServiceName: 'start_video',
   videoServiceMessageType: 'interfaces/srv/VideoOut',
   defaultVideoRequest: {
@@ -70,10 +62,6 @@ const defaultConfig: WebRTCClientConfig = {
   mockMode: false,
 };
 
-/* ======================================================================
-   WebRTCClientPanel Component
-====================================================================== */
-
 const WebRTCClientPanel: React.FC<WebRTCClientPanelProps> = ({
   config = defaultConfig,
   createPeerConnection,
@@ -84,11 +72,11 @@ const WebRTCClientPanel: React.FC<WebRTCClientPanelProps> = ({
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [webrtcStatus, setWebrtcStatus] = useState<string>('disconnected');
   const [streamStarted, setStreamStarted] = useState<boolean>(false);
+  const [stats, setStats] = useState<any>(null);
 
-  // Retrieve ROS connection from our shared context.
   const { ros, connectionStatus: rosStatus } = useROS();
 
-  // Use injected factories or default implementations.
+  // wtf even is this syntax, i hate react
   const createPC =
     createPeerConnection ??
     ((cfg: WebRTCClientConfig) =>
@@ -99,23 +87,25 @@ const WebRTCClientPanel: React.FC<WebRTCClientPanelProps> = ({
       }));
   const createWS = createWebSocket ?? ((url: string) => new WebSocket(url));
 
-  // Function to set up the WebRTC connection.
+  // async that shit, for setting up webrtc
   const setupWebRTC = async () => {
     const peerConnection = createPC(config);
     setPc(peerConnection);
 
-    // Add a transceiver for video in recvonly mode.
-    peerConnection.addTransceiver('video', { direction: 'recvonly' });
+    peerConnection.onconnectionstatechange = () => {
+      setWebrtcStatus(peerConnection.connectionState);
+    };
 
-    // Attach remote tracks to the video element.
+    // this one only sets up video receive cause that is all we are doing
+    peerConnection.addTransceiver('video', { direction: 'recvonly' });
     peerConnection.ontrack = (event) => {
       if (videoRef.current) {
         videoRef.current.srcObject = event.streams[0];
-        console.log("Remote track event:", event.streams);
+        console.log('Remote track event:', event.streams);
       }
     };
 
-    // Handle ICE candidates: send them via the signaling channel.
+    // ICE on my wrist 
     peerConnection.onicecandidate = (event) => {
       if (event.candidate && socket && socket.readyState === WebSocket.OPEN) {
         socket.send(
@@ -127,17 +117,16 @@ const WebRTCClientPanel: React.FC<WebRTCClientPanelProps> = ({
       }
     };
 
-    // Create a WebSocket connection for signaling.
+    // important signalling
     const ws = createWS(config.signalingUrl || defaultConfig.signalingUrl!);
     setSocket(ws);
 
     ws.onopen = async () => {
-      setWebrtcStatus('connected');
+      // react shit here and there again
+      setWebrtcStatus('connecting');
 
-      // Create an offer.
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
-
       ws.send(
         JSON.stringify({
           type: 'newPeer',
@@ -168,11 +157,27 @@ const WebRTCClientPanel: React.FC<WebRTCClientPanelProps> = ({
     };
   };
 
-  // Function to start the video stream.
+  // more react bullshit to get the stats of the webrtc stream
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (pc) {
+      interval = setInterval(async () => {
+        const statsReport = await pc.getStats();
+        const statsArray: any[] = [];
+        statsReport.forEach((report) => {
+          statsArray.push(report);
+        });
+        setStats(statsArray);
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [pc]);
+
   const startVideoService = () => {
-    // For testing without ROS2, bypass the service call.
     if (config.mockMode) {
-      console.log('Mock mode enabled: bypassing ROS service call.');
+      console.log('Mock mode enabled, bypassing ROS2 services and what not');
       setStreamStarted(true);
       setupWebRTC();
       return;
@@ -189,9 +194,7 @@ const WebRTCClientPanel: React.FC<WebRTCClientPanelProps> = ({
       serviceType: config.videoServiceMessageType || defaultConfig.videoServiceMessageType!,
     });
 
-    const request: VideoOutRequest =
-      config.defaultVideoRequest || defaultConfig.defaultVideoRequest!;
-
+    const request: VideoOutRequest = config.defaultVideoRequest || defaultConfig.defaultVideoRequest!;
     startVideoSrv.callService(new ROSLIB.ServiceRequest(request), (response: VideoOutResponse) => {
       if (response.success) {
         console.log('Video stream started successfully on rover.');
@@ -203,7 +206,20 @@ const WebRTCClientPanel: React.FC<WebRTCClientPanelProps> = ({
     });
   };
 
-  // Cleanup on unmount.
+  const stopVideoStream = () => {
+    if (pc) {
+      pc.close();
+      setPc(null);
+    }
+    if (socket) {
+      socket.close();
+      setSocket(null);
+    }
+    setStreamStarted(false);
+    setWebrtcStatus('disconnected');
+  };
+
+  // cleaning up on unmount ;) 🍆🍆
   useEffect(() => {
     return () => {
       if (pc) pc.close();
@@ -223,17 +239,42 @@ const WebRTCClientPanel: React.FC<WebRTCClientPanelProps> = ({
         flexDirection: 'column',
       }}
     >
-      <h2>WebRTC Video Stream</h2>
-      <p>WebRTC Status: {webrtcStatus}</p>
+      <h2 style={{ marginBottom: '0.5rem' }}>WebRTC Video Stream</h2>
+      <div style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <span>Status: {webrtcStatus}</span>
+        {streamStarted && (
+          <button
+            onClick={stopVideoStream}
+            style={{
+              padding: '0.25rem 0.5rem',
+              backgroundColor: '#d9534f',
+              border: 'none',
+              borderRadius: '4px',
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            Stop Stream
+          </button>
+        )}
+      </div>
       {!streamStarted && (
         <button
           onClick={startVideoService}
-          style={{ padding: '0.5rem', marginBottom: '1rem' }}
+          style={{
+            padding: '0.5rem',
+            marginBottom: '1rem',
+            backgroundColor: '#0070f3',
+            border: 'none',
+            borderRadius: '4px',
+            color: '#fff',
+            cursor: 'pointer',
+          }}
         >
           Start Video Stream
         </button>
       )}
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, position: 'relative' }}>
         <video
           ref={videoRef}
           autoPlay
@@ -242,10 +283,30 @@ const WebRTCClientPanel: React.FC<WebRTCClientPanelProps> = ({
           style={{
             width: '100%',
             height: '100%',
-            objectFit: 'cover', // Ensures the video fills the container
+            objectFit: 'cover',
             backgroundColor: '#000',
           }}
         />
+        {stats && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 10,
+              left: 10,
+              backgroundColor: 'rgba(0,0,0,0.7)',
+              padding: '0.5rem',
+              borderRadius: '4px',
+              maxHeight: '200px',
+              overflowY: 'auto',
+              fontSize: '0.75rem',
+            }}
+          >
+            <strong>WebRTC Stats</strong>
+            <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>
+              {JSON.stringify(stats, null, 2)}
+            </pre>
+          </div>
+        )}
       </div>
     </div>
   );
